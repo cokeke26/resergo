@@ -1,0 +1,177 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id            Int      @id @default(autoincrement())
+  nombre        String
+  apellido      String
+  email         String   @unique
+  password      String
+  telefono      String?
+  rol           String   @default("cliente") // admin | cliente | dueño
+  estado        String   @default("activo")
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  reservas      Reserva[]
+  recintos      Recinto[]   @relation("UsuarioRecintos")
+  recintosAdmin Recinto[]   @relation("UsuarioAdminRecintos")
+  historial     Historial[]
+
+  // 🔔 NUEVAS RELACIONES
+  notificaciones    Notificacion[]
+  solicitudesCambio SolicitudCambio[]
+}
+
+model Recinto {
+  id          Int     @id @default(autoincrement())
+  nombre      String  @unique
+  ubicacion   String 
+  descripcion String?
+  direccion   String?   // <-- AGREGADO
+  latitud     Float?
+  longitud    Float?
+
+  duenoId Int
+  dueno   Usuario @relation("UsuarioRecintos", fields: [duenoId], references: [id])
+
+  adminId Int?
+  admin   Usuario? @relation("UsuarioAdminRecintos", fields: [adminId], references: [id])
+
+  disponibilidades Disponibilidad[]
+  canchas          Cancha[]
+  reservas         Reserva[]
+  createdAt        DateTime @default(now())
+}
+
+model Cancha {
+  id        Int          @id @default(autoincrement())
+  nombre    String
+  tipo      String
+  recintoId Int
+  recinto   Recinto      @relation(fields: [recintoId], references: [id], onDelete: Cascade)
+  reservas  Reserva[]
+  slots     CanchaSlot[]
+
+  // 🔁 Relación con solicitud de cambio
+  solicitudesCambio SolicitudCambio[]
+}
+
+model CanchaSlot {
+  id         Int    @id @default(autoincrement())
+  canchaId   Int
+  fecha      String
+  horaInicio String
+  horaFin    String
+  estado     String @default("disponible") // disponible | bloqueado | ocupado
+
+  // 🔥 NUEVO: tipo de bloqueo
+  tipoBloqueo     String?   // "dia" | "horas"
+
+  // 🔥 NUEVO: si tipoBloqueo = "horas"
+  bloqueadoDesde  String?   // HH:MM
+  bloqueadoHasta  String?   // HH:MM
+
+  cancha Cancha @relation(fields: [canchaId], references: [id], onDelete: Cascade)
+
+  @@unique([canchaId, fecha, horaInicio, horaFin], name: "unique_slot_por_hora")
+  @@index([canchaId, fecha])
+}
+
+
+model Reserva {
+  id               Int    @id @default(autoincrement())
+  fecha            String
+  horaInicio       String
+  horaFin          String
+  usuarioId        Int
+  canchaId         Int
+  recintoId        Int
+  disponibilidadId Int?
+  slotId           Int?
+  precio          Int
+
+  Usuario        Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  Cancha         Cancha          @relation(fields: [canchaId], references: [id], onDelete: Cascade)
+  recinto        Recinto         @relation(fields: [recintoId], references: [id], onDelete: Cascade)
+  disponibilidad Disponibilidad? @relation(fields: [disponibilidadId], references: [id], onDelete: SetNull)
+
+  historial         Historial[]
+  solicitudesCambio SolicitudCambio[] // 🔁 nuevas solicitudes asociadas a la reserva
+}
+
+model Disponibilidad {
+  id         Int       @id @default(autoincrement())
+  fecha      String
+  horaInicio String
+  horaFin    String
+  recintoId  Int
+  recinto    Recinto   @relation(fields: [recintoId], references: [id], onDelete: Cascade)
+  reservas   Reserva[]
+}
+
+model Historial {
+  id          Int      @id @default(autoincrement())
+  tipoAccion  String
+  motivo      String
+  fechaAccion DateTime @default(now())
+  reservaId   Int?
+  usuarioId   Int
+
+  reserva Reserva? @relation(fields: [reservaId], references: [id], onDelete: SetNull)
+  usuario Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+}
+
+//
+// =========================
+// NUEVOS MODELOS
+// =========================
+//
+
+model Notificacion {
+  id        Int      @id @default(autoincrement())
+  titulo    String    // 🆕 agregado: para un encabezado rápido
+  mensaje   String
+  tipo      String?
+  fecha     DateTime  @default(now())
+  leida     Boolean   @default(false)
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+}
+
+model SolicitudCambio {
+  id              Int     @id @default(autoincrement())
+  estado          String  @default("pendiente") // pendiente | aceptada | rechazada
+  nuevaFecha      String   // 🔹 ahora obligatoria (misma fecha de la reserva)
+  nuevaHoraInicio String   // 🔹 obligatoria
+  nuevaHoraFin    String   // 🔹 obligatoria
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  reservaId Int
+  reserva   Reserva @relation(fields: [reservaId], references: [id], onDelete: Cascade)
+
+  canchaId Int
+  cancha   Cancha @relation(fields: [canchaId], references: [id], onDelete: Cascade)
+
+  creadaEn DateTime @default(now())
+}
+model PagoTemp {
+  buyOrder   String   @id
+  usuarioId  Int
+  recintoId  Int
+  canchaId   Int
+  slotId     Int
+  precio     Int
+  fecha      String
+  horaInicio String
+  horaFin    String
+}
